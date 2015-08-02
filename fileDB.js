@@ -27,6 +27,10 @@ function FileDB(app_key) {
 			return query(table_name);
 		}
 
+		this.rowCount = function(table_name){
+			return query(table_name).lenth;
+		}
+
 		this.createTable=createTable;
 		function createTable(table_name){
 				all_tables[table_name]= new Table(table_name,true);
