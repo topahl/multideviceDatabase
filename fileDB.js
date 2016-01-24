@@ -19,12 +19,14 @@ function FileDB(app_key) {
 		};
 
 		this.query = query;
-		function query(table_name,params){
-				return all_tables[table_name].query(params);
+		function query(table_name,query_string,sort){
+				return all_tables[table_name].query(query_string,sort);
 		}
 
-		this.queryAll = function(table_name){
-			return query(table_name);
+		this.queryAll = function(table_name,params){
+			return this.query(table_name,
+				params.hasOwnProperty('query') ? params.query : null,
+				params.hasOwnProperty('sort') ? params.sort : null);
 		}
 
 		this.rowCount = function(table_name){
@@ -151,13 +153,33 @@ function FileDB(app_key) {
 						return file;
 				}
 
-				this.query = function(param){
+				this.query = function(query_string, sort){
 						var result = [];
 						for (var i = 0; i < data_file_objects.length; i++) {
-								result = result.concat(data_file_objects[i].query(param));
+								result = result.concat(data_file_objects[i].query(query_string));
 						};
+				  		if(sort && sort instanceof Array){
+							for(var i=0; i<sort.length; i++) {
+								result.sort(sort_results(sort[i][0], sort[i].length > 1 ? sort[i][1] : null));
+							}
+						}
 						return result;
 				}
+                
+                function sort_results(field, order){
+					return function(x, y) {
+                  	// case insensitive comparison for string values
+                  		var v1 = typeof(x[field]) === "string" ? x[field].toLowerCase() : x[field],
+                      	v2 = typeof(y[field]) === "string" ? y[field].toLowerCase() : y[field];
+
+                  		if(order === "DESC") {
+                      		return v1 == v2 ? 0 : (v1 < v2 ? 1 : -1);
+                  		} else {
+                      		return v1 == v2 ? 0 : (v1 > v2 ? 1 : -1);
+                  		}
+              		};
+                }
+		  
 		};
 
 		this.File = File;
@@ -179,7 +201,7 @@ function FileDB(app_key) {
 						if (typeof param == 'function') {
 								return queryByFunction(param);
 						}
-						if (typeof param == 'undefined') {
+						if (typeof param == 'undefined'|| param == null) {
 								return data_object;
 						}
 						return queryByValue(param);
