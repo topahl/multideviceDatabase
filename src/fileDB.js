@@ -30,7 +30,7 @@ function FileDB(app_key) {
 		}
 
 		this.rowCount = function(table_name){
-			return query(table_name).lenth;
+			return query(table_name).length;
 		}
 
 		this.createTable=createTable;
@@ -165,7 +165,7 @@ function FileDB(app_key) {
 						}
 						return result;
 				}
-                
+
                 function sort_results(field, order){
 					return function(x, y) {
                   	// case insensitive comparison for string values
@@ -179,7 +179,7 @@ function FileDB(app_key) {
                   		}
               		};
                 }
-		  
+
 		};
 
 		this.File = File;
