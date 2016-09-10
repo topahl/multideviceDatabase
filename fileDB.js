@@ -23,6 +23,14 @@ function FileDB(app_key) {
 				return all_tables[table_name].query(query_string,sort);
 		}
 
+		this.update = function(table_name,query,updateFunc){
+			all_tables[table_name].update(query,updateFunc);
+		}
+
+		this.remove = function(table_name,query){
+			all_tables[table_name].remove(query);
+		}
+
 		this.queryAll = function(table_name,params){
 			return this.query(table_name,
 				params.hasOwnProperty('query') ? params.query : null,
@@ -50,6 +58,7 @@ function FileDB(app_key) {
 		function insert(table_name,data){
 				all_tables[table_name].insert(data);
 		}
+
 
 		function loadTables(callback){
 				client.readdir("/",function(err,files){
@@ -140,7 +149,22 @@ function FileDB(app_key) {
 				};
 
 
+				this.remove = function(query){
+					for (var i = 0; i < data_file_objects.length; i++) {
+						data_file_objects[i].remove(query);
+					};
+				}
 
+				this.update = function(query,func){
+					var result = clone(this.query(query));
+					var ins = [];
+					this.remove(query);
+					for (var i = result.length - 1; i >= 0; i--) {
+						func(result[i]);
+						this.insert(result[i]);
+					};
+
+				}
 
 				function createNewDatafile() {
 						var name = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
