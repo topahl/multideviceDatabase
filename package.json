@@ -1,0 +1,38 @@
+{
+  "name": "multideviceDatabase",
+  "version": "0.2.0",
+  "description": "JS Database Layer for Dropbox File API. Adds a database layer, based on the API by knadh/localstoragedb, with SQL-like capabilities to query JSON-based data. Stores the data directly in Dropbox for given app key.",
+  "main": "sampleApp/index.html",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pianomister/multideviceDatabase.git"
+  },
+  "keywords": [],
+  "author": "topahl",
+  "contributors": [
+    {
+      "name": "pianomister",
+      "url": "https://github.com/pianomister"
+    }
+  ],
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/topahl/multideviceDatabase/issues"
+  },
+  "homepage": "https://github.com/topahl/multideviceDatabase#readme",
+  "dependencies": {
+  },
+  "devDependencies": {
+    "babel-preset-es2015": "^6.14.0",
+    "gulp": "^3.9.1",
+    "gulp-babel": "^6.1.2",
+    "gulp-concat": "^2.6.0",
+    "gulp-rename": "^1.2.2",
+    "gulp-streamify": "^1.0.2",
+    "gulp-uglify": "^2.0.0",
+    "gulp-util": "^3.0.7"
+  }
+}
