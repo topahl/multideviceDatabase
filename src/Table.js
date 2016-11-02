@@ -8,17 +8,16 @@ class Table {
 		create = create || false;
 		promiseResolve = promiseResolve || false;
 		promiseReject = promiseReject || false;
-		var file, tableFile;
+		var file;
 
 		this.tableFileData = {};
 		this.dataFileObjects = [];
 		this.data = [];
 		this.client = client;
-		this.tableName = tableName; // TODO debug
-		tableFile = new File(tableName, client);
+		this.tableFile = new File(tableName, client);
 
 		if (create) {
-			var promise = tableFile.readFile();
+			var promise = this.tableFile.readFile();
 			this.data[0] = {
 				maxSize: 62500, // 62500 bytes = 50kB
 				dataFiles: []
@@ -30,7 +29,7 @@ class Table {
 			file = this.createNewDatafile();
 			this.dataFileObjects.push(file);
 			this.data[0].dataFiles.push(file.getName());
-			tableFile.insert(this.data[0]);
+			this.tableFile.insert(this.data[0]);
 			this.tableFileData = this.data[0];
 
 			promise.then((data) => {
@@ -39,10 +38,10 @@ class Table {
 				}
 			});
 		} else {
-			tableFile.readFile()
+			this.tableFile.readFile()
 				.then((data) => {
 					var df, f, results;
-					this.data = tableFile.getDataArray();
+					this.data = this.tableFile.getDataArray();
 					this.tableFileData = this.data[0];
 					var promises = [];
 
@@ -84,7 +83,7 @@ class Table {
 			dataFiles.push(dfo.getName());
 		}
 
-		return tableFile.update(void 0, {
+		return this.tableFile.update(void 0, {
 			'dataFiles': dataFiles
 		});
 	}
