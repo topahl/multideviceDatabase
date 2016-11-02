@@ -540,7 +540,7 @@ var Table = function () {
 			var df = this.dataFileObjects[this.dataFileObjects.length - 1];
 
 			if (df.getSize() > this.tableFileData.maxSize) {
-				df = createNewDatafile();
+				df = this.createNewDatafile();
 				this.dataFileObjects.push(df);
 				this.tableFileData.dataFiles.push(df.getName());
 				this.updateTableData();
