@@ -54,7 +54,6 @@ class Table {
 					Promise.all(promises)
 						.then((values) => {
 							if (promiseResolve) {
-								console.debug("[Table.constructor] successfully loaded files for", tableName, values);
 								promiseResolve(values);
 							}
 						})
@@ -137,15 +136,15 @@ class Table {
 		return result;
 	}
 
-  update(query, updateFunction) {
-    var result = [];
+	update(query, updateFunction) {
+		var result = [];
 
 		for (dfo of this.dataFileObjects) {
 			result = result.concat(dfo.updateByFunction(query, updateFunction));
 		}
 
-    return result;
-  }
+		return result;
+	}
 
 	createNewDatafile() {
 		var file, name;
@@ -156,7 +155,7 @@ class Table {
 			return v.toString(16);
 		});
 
-		file = new File("_" + name, this.client);
+		file = new File('_' + name, this.client);
 		file.readFile();
 		// TODO check if we need to wait for file reading here
 		return file;
@@ -167,10 +166,10 @@ class Table {
 			order = null;
 		}
 
-		return function(x, y) {
+		return function (x, y) {
 			// case insensitive comparison for string values
-			var v1 = typeof(x[field]) === "string" ? x[field].toLowerCase() : x[field],
-				v2 = typeof(y[field]) === "string" ? y[field].toLowerCase() : y[field];
+			var v1 = typeof (x[field]) === "string" ? x[field].toLowerCase() : x[field],
+				v2 = typeof (y[field]) === "string" ? y[field].toLowerCase() : y[field];
 
 			if (order === "DESC") {
 				return v1 == v2 ? 0 : (v1 < v2 ? 1 : -1);

@@ -58,21 +58,19 @@ class File {
 		return this.query(param);
 	}
 
-  updateByFunction(query, updateFunction) {
-    var result = this.queryHelper(query);
+	updateByFunction(query, updateFunction) {
+		var result = this.queryHelper(query);
 
-    console.debug("[File.updateByFunction] affected rows: ", this.toDataArray(result).length);
-
-    for (id in result) {
+		for (id in result) {
 			if (!result.hasOwnProperty(id)) continue;
 			var row = result[id];
-			var newRow = updateFunction( this.clone(row) );
-      this.remove(this.dataObject[id]);
+			var newRow = updateFunction(this.clone(row));
+			this.remove(this.dataObject[id]);
 			this.insert(newRow);
-    }
+		}
 
-    return this.query(query);
-  }
+		return this.query(query);
+	}
 
 	insert(data) {
 		this.scheduleSync();
@@ -85,8 +83,6 @@ class File {
 		var id, ref, result, row;
 		result = {};
 		ref = this.dataObject;
-
-		//    console.debug('queryByFunction,  func:', func);
 
 		for (id in ref) {
 			if (!ref.hasOwnProperty(id)) continue;
@@ -103,8 +99,6 @@ class File {
 		var field, found, id, ref, result, row;
 		result = {};
 		ref = this.dataObject;
-
-		//    console.debug('queryByValue,  params:', params);
 
 		for (id in ref) {
 			if (!ref.hasOwnProperty(id)) continue;
@@ -160,41 +154,37 @@ class File {
 	}
 
 	sync() {
-    console.debug("[File.sync] start sync", "fileStats:", this.fileStats);
 		var oldVersionTag, time, promise;
 		this.syncing = false;
 		time = (new Date()).getTime();
 		oldVersionTag = "0";
 
 		if (this.fileStats != null) {
-			oldVersionTag = this.fileStats.versionTag;
+			oldVersionTag = this.fileStats.rev;
 		}
 
 		this.readStat()
 			.then((value) => {
-        console.debug("[File.sync] after readStat", oldVersionTag, this.fileStats.versionTag);
-				if (oldVersionTag !== this.fileStats.versionTag) {
-          // if there are changes on server side,
-          // they need to be merged with local changes
+				if (oldVersionTag !== this.fileStats.rev) {
+					// if there are changes on server side,
+					// they need to be merged with local changes
 					var oldData = this.clone(this.dataObject);
-          console.debug("[File.sync] version tags do differ");
 					this.readFile()
 						.then((data) => {
-              console.debug("[File.sync] after readFile");
 							this.dataObject = this.merge(oldData, this.dataObject);
 							this.timeLastRead = time;
 							this.writeFile();
 						});
 				} else {
-          // versions are identical, file can be overridden without loss
-          this.timeLastRead = time;
-          this.writeFile();
-        }
+					// versions are identical, file can be overridden without loss
+					this.timeLastRead = time;
+					this.writeFile();
+				}
 			});
 	}
 
 	getVersionTag() {
-		return this.fileStats.versionTag;
+		return this.fileStats.rev;
 	}
 
 	getSize() {
@@ -234,13 +224,24 @@ class File {
 	 */
 	readFile() {
 		return new Promise((resolve, reject) => {
-			this.client.readFile(this.fileName, (err, data, stats) => {
-				if (this.error(err)) {
-					this.dataObject = JSON.parse(data);
-					this.fileStats = stats;
-					resolve(this.dataObject);
-				}
-			});
+			this.client.filesDownload({
+					path: '/' + this.fileName
+				})
+				.then(response => {
+					this.fileStats = response;
+
+					// read file contents using FileReader
+					var blob = response.fileBlob;
+					var reader = new FileReader();
+					reader.addEventListener('loadend', () => {
+						this.dataObject = JSON.parse(reader.result);
+						resolve(this.dataObject);
+					});
+					reader.readAsText(blob);
+				})
+				.catch(error => {
+					this.error(error);
+				});
 		});
 	}
 
@@ -250,24 +251,35 @@ class File {
 	 */
 	writeFile() {
 		return new Promise((resolve, reject) => {
-			this.client.writeFile(this.fileName, JSON.stringify(this.dataObject), (err, stats) => {
-				if (this.error(err)) {
-					this.fileStats = stats;
-					resolve(stats);
-				}
-			});
+
+			this.client.filesUpload({
+					path: '/' + this.fileName,
+					contents: JSON.stringify(this.dataObject),
+					mode: 'overwrite',
+					// mute: true // no desktop notification on sync
+				})
+				.then(response => {
+					this.fileStats = response;
+					resolve(response);
+				})
+				.catch(error => {
+					this.error(error);
+				});
 		});
 	}
 
 	readStat() {
 		return new Promise((resolve, reject) => {
-			this.client.stat(this.fileName, (err, stats) => {
-				if (this.error(err)) {
-          console.debug("[readStat] stats:", stats);
-					this.fileStats = stats;
-					resolve(stats);
-				}
-			});
+			this.client.filesGetMetadata({
+					path: '/' + this.fileName
+				})
+				.then(response => {
+					this.fileStats = response;
+					resolve(response);
+				})
+				.catch(error => {
+					this.error(error);
+				});
 		});
 	}
 
@@ -275,16 +287,11 @@ class File {
 		var result;
 		result = true;
 		if (err != null) {
-			switch (err.status) {
-				case 404:
+			switch (err['.tag']) {
+				case 'not_found':
 					result = false;
-					console.log("File not found - creating new file");
+					console.info('File not found - creating new file');
 					this.writeFile();
-					break;
-				case 503:
-					result = false;
-					console.log("Too many requests - try again in 1000ms");
-					setTimeout(this.sync, 1000);
 					break;
 				default:
 					console.error(err);
@@ -297,7 +304,7 @@ class File {
 
 	merge(objA, objB) {
 		var key, objMerged, time;
-		console.log("MERGING");
+		console.info('Merging files');
 		objMerged = {};
 		time = 0;
 
@@ -326,15 +333,6 @@ class File {
 	clone(obj) {
 		var str = JSON.stringify(obj);
 		return JSON.parse(str);
-		// results in NaN and undefined values:
-		/*var new_obj = {};
-			for(var key in obj) {
-				if( obj.hasOwnProperty(key) ) {
-					new_obj[key] = obj[key];
-				}
-			}
-			return new_obj;*/
-		s
 	}
 
 	call(func) {
