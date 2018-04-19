@@ -1,6 +1,6 @@
 {
   "name": "multideviceDatabase",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "JS Database Layer for Dropbox File API. Adds a database layer, based on the API by knadh/localstoragedb, with SQL-like capabilities to query JSON-based data. Stores the data directly in Dropbox for given app key.",
   "main": "sampleApp/index.html",
   "scripts": {
