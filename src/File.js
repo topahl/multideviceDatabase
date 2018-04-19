@@ -287,8 +287,8 @@ class File {
 		var result;
 		result = true;
 		if (err != null) {
-			switch (err['.tag']) {
-				case 'not_found':
+			switch (err.status) {
+				case 409:
 					result = false;
 					console.info('File not found - creating new file');
 					this.writeFile();
