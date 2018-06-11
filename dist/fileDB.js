@@ -74,8 +74,6 @@ var File = function () {
 		value: function updateByFunction(query, updateFunction) {
 			var result = this.queryHelper(query);
 
-			console.debug("[File.updateByFunction] affected rows: ", this.toDataArray(result).length);
-
 			for (id in result) {
 				if (!result.hasOwnProperty(id)) continue;
 				var row = result[id];
@@ -101,8 +99,6 @@ var File = function () {
 			result = {};
 			ref = this.dataObject;
 
-			//    console.debug('queryByFunction,  func:', func);
-
 			for (id in ref) {
 				if (!ref.hasOwnProperty(id)) continue;
 				row = ref[id];
@@ -119,8 +115,6 @@ var File = function () {
 			var field, found, id, ref, result, row;
 			result = {};
 			ref = this.dataObject;
-
-			//    console.debug('queryByValue,  params:', params);
 
 			for (id in ref) {
 				if (!ref.hasOwnProperty(id)) continue;
@@ -183,25 +177,21 @@ var File = function () {
 		value: function sync() {
 			var _this2 = this;
 
-			console.debug("[File.sync] start sync", "fileStats:", this.fileStats);
 			var oldVersionTag, time, promise;
 			this.syncing = false;
 			time = new Date().getTime();
 			oldVersionTag = "0";
 
 			if (this.fileStats != null) {
-				oldVersionTag = this.fileStats.versionTag;
+				oldVersionTag = this.fileStats.rev;
 			}
 
 			this.readStat().then(function (value) {
-				console.debug("[File.sync] after readStat", oldVersionTag, _this2.fileStats.versionTag);
-				if (oldVersionTag !== _this2.fileStats.versionTag) {
+				if (oldVersionTag !== _this2.fileStats.rev) {
 					// if there are changes on server side,
 					// they need to be merged with local changes
 					var oldData = _this2.clone(_this2.dataObject);
-					console.debug("[File.sync] version tags do differ");
 					_this2.readFile().then(function (data) {
-						console.debug("[File.sync] after readFile");
 						_this2.dataObject = _this2.merge(oldData, _this2.dataObject);
 						_this2.timeLastRead = time;
 						_this2.writeFile();
@@ -216,7 +206,7 @@ var File = function () {
 	}, {
 		key: "getVersionTag",
 		value: function getVersionTag() {
-			return this.fileStats.versionTag;
+			return this.fileStats.rev;
 		}
 	}, {
 		key: "getSize",
@@ -266,12 +256,21 @@ var File = function () {
 			var _this3 = this;
 
 			return new Promise(function (resolve, reject) {
-				_this3.client.readFile(_this3.fileName, function (err, data, stats) {
-					if (_this3.error(err)) {
-						_this3.dataObject = JSON.parse(data);
-						_this3.fileStats = stats;
+				_this3.client.filesDownload({
+					path: '/' + _this3.fileName
+				}).then(function (response) {
+					_this3.fileStats = response;
+
+					// read file contents using FileReader
+					var blob = response.fileBlob;
+					var reader = new FileReader();
+					reader.addEventListener('loadend', function () {
+						_this3.dataObject = JSON.parse(reader.result);
 						resolve(_this3.dataObject);
-					}
+					});
+					reader.readAsText(blob);
+				}).catch(function (error) {
+					_this3.error(error);
 				});
 			});
 		}
@@ -287,11 +286,16 @@ var File = function () {
 			var _this4 = this;
 
 			return new Promise(function (resolve, reject) {
-				_this4.client.writeFile(_this4.fileName, JSON.stringify(_this4.dataObject), function (err, stats) {
-					if (_this4.error(err)) {
-						_this4.fileStats = stats;
-						resolve(stats);
-					}
+
+				_this4.client.filesUpload({
+					path: '/' + _this4.fileName,
+					contents: JSON.stringify(_this4.dataObject),
+					mode: 'overwrite'
+				}).then(function (response) {
+					_this4.fileStats = response;
+					resolve(response);
+				}).catch(function (error) {
+					_this4.error(error);
 				});
 			});
 		}
@@ -301,12 +305,13 @@ var File = function () {
 			var _this5 = this;
 
 			return new Promise(function (resolve, reject) {
-				_this5.client.stat(_this5.fileName, function (err, stats) {
-					if (_this5.error(err)) {
-						console.debug("[readStat] stats:", stats);
-						_this5.fileStats = stats;
-						resolve(stats);
-					}
+				_this5.client.filesGetMetadata({
+					path: '/' + _this5.fileName
+				}).then(function (response) {
+					_this5.fileStats = response;
+					resolve(response);
+				}).catch(function (error) {
+					_this5.error(error);
 				});
 			});
 		}
@@ -317,15 +322,10 @@ var File = function () {
 			result = true;
 			if (err != null) {
 				switch (err.status) {
-					case 404:
+					case 409:
 						result = false;
-						console.log("File not found - creating new file");
+						console.info('File not found - creating new file');
 						this.writeFile();
-						break;
-					case 503:
-						result = false;
-						console.log("Too many requests - try again in 1000ms");
-						setTimeout(this.sync, 1000);
 						break;
 					default:
 						console.error(err);
@@ -339,7 +339,7 @@ var File = function () {
 		key: "merge",
 		value: function merge(objA, objB) {
 			var key, objMerged, time;
-			console.log("MERGING");
+			console.info('Merging files');
 			objMerged = {};
 			time = 0;
 
@@ -371,15 +371,6 @@ var File = function () {
 		value: function clone(obj) {
 			var str = JSON.stringify(obj);
 			return JSON.parse(str);
-			// results in NaN and undefined values:
-			/*var new_obj = {};
-   	for(var key in obj) {
-   		if( obj.hasOwnProperty(key) ) {
-   			new_obj[key] = obj[key];
-   		}
-   	}
-   	return new_obj;*/
-			s;
 		}
 	}, {
 		key: "call",
@@ -410,17 +401,16 @@ var Table = function () {
 		create = create || false;
 		promiseResolve = promiseResolve || false;
 		promiseReject = promiseReject || false;
-		var file, tableFile;
+		var file;
 
 		this.tableFileData = {};
 		this.dataFileObjects = [];
 		this.data = [];
 		this.client = client;
-		this.tableName = tableName; // TODO debug
-		tableFile = new File(tableName, client);
+		this.tableFile = new File(tableName, client);
 
 		if (create) {
-			var promise = tableFile.readFile();
+			var promise = this.tableFile.readFile();
 			this.data[0] = {
 				maxSize: 62500, // 62500 bytes = 50kB
 				dataFiles: []
@@ -432,7 +422,7 @@ var Table = function () {
 			file = this.createNewDatafile();
 			this.dataFileObjects.push(file);
 			this.data[0].dataFiles.push(file.getName());
-			tableFile.insert(this.data[0]);
+			this.tableFile.insert(this.data[0]);
 			this.tableFileData = this.data[0];
 
 			promise.then(function (data) {
@@ -441,9 +431,9 @@ var Table = function () {
 				}
 			});
 		} else {
-			tableFile.readFile().then(function (data) {
+			this.tableFile.readFile().then(function (data) {
 				var df, f, results;
-				_this.data = tableFile.getDataArray();
+				_this.data = _this.tableFile.getDataArray();
 				_this.tableFileData = _this.data[0];
 				var promises = [];
 
@@ -476,7 +466,6 @@ var Table = function () {
 
 				Promise.all(promises).then(function (values) {
 					if (promiseResolve) {
-						console.debug("[Table.constructor] successfully loaded files for", tableName, values);
 						promiseResolve(values);
 					}
 				}).catch(function (error) {
@@ -530,7 +519,7 @@ var Table = function () {
 				}
 			}
 
-			return tableFile.update(void 0, {
+			return this.tableFile.update(void 0, {
 				'dataFiles': dataFiles
 			});
 		}
@@ -540,7 +529,7 @@ var Table = function () {
 			var df = this.dataFileObjects[this.dataFileObjects.length - 1];
 
 			if (df.getSize() > this.tableFileData.maxSize) {
-				df = createNewDatafile();
+				df = this.createNewDatafile();
 				this.dataFileObjects.push(df);
 				this.tableFileData.dataFiles.push(df.getName());
 				this.updateTableData();
@@ -671,7 +660,7 @@ var Table = function () {
 				return v.toString(16);
 			});
 
-			file = new File("_" + name, this.client);
+			file = new File('_' + name, this.client);
 			file.readFile();
 			// TODO check if we need to wait for file reading here
 			return file;
@@ -704,7 +693,7 @@ var Table = function () {
 
 	return Table;
 }();
-"use strict";
+'use strict';
 
 var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
 
@@ -713,7 +702,6 @@ var _createClass = function () { function defineProperties(target, props) { for 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 // TODO insertOrUpdate method
-// TODO migrate to Dropbox APIv2, as v1 was deprecated end of July, 2016
 
 var FileDB = function () {
 	function FileDB(apiKey) {
@@ -726,31 +714,97 @@ var FileDB = function () {
 	}
 
 	/**
-  * initializes authentication to Dropbox API, and trigggers
-  * loading of tables from Dropbox directory.
+  * checks if access token is set, first in localStorage
+  * and then in URL hash (when redirected from Dropbox authentication).
+  * If the token is set via in hash string, save it in localStorage.
+  * 
+  * @returns Access token if found, else null
   */
 
 
 	_createClass(FileDB, [{
-		key: "setupDropbox",
+		key: 'getAccessToken',
+		value: function getAccessToken() {
+
+			var accessToken = null;
+
+			// check for access token in localStorage
+			if (typeof Storage !== 'undefined') {
+				var storedToken = localStorage.getItem('ACCESS_TOKEN');
+				if (typeof storedToken === 'string') {
+					accessToken = storedToken;
+				}
+			}
+
+			// check if access token is set within query params, and save it
+			var locationHash = window.location.hash;
+			if (!accessToken && locationHash && locationHash.length > 0) {
+				locationHash.substr(1).split('&').forEach(function (param) {
+					var keyValue = param.split('=');
+					if (keyValue[0] === 'access_token' && typeof keyValue[1] === 'string') {
+						accessToken = keyValue[1];
+						localStorage.setItem('ACCESS_TOKEN', accessToken);
+					}
+				});
+			}
+
+			return accessToken;
+		}
+
+		/**
+   * checks if user is authenticated, by checking for access token.
+   * 
+   * @returns true if user has access token, else false
+   */
+
+	}, {
+		key: 'isAuthenticated',
+		value: function isAuthenticated() {
+			return !!this.getAccessToken();
+		}
+
+		/**
+   * initializes authentication to Dropbox API, and trigggers
+   * loading of tables from Dropbox directory.
+   */
+
+	}, {
+		key: 'setupDropbox',
 		value: function setupDropbox(callback) {
 			var _this = this;
 
 			var promise = new Promise(function (resolve, reject) {
-				_this.client = new Dropbox.Client({
-					"key": _this.apiKey
-				});
 
-				_this.client.authenticate(null, function (error) {
-					if (!!error) {
-						throw error;
-					}
+				// Dropbox API v2 requires more manual work for authentication.
+				// The following checks if an authentication token is already available
+				// and if available, uses it for authentication. Otherwise, use
+				// the app id to authenticate the user, after redirect parse the
+				// access token from window.location.hash string, and save it
+				// in localStorage for reuse on next re-visit.  
+
+				var accessToken = _this.getAccessToken();
+
+				// access token is available, using it for authentication
+				if (accessToken) {
+
+					_this.client = new window.Dropbox({
+						accessToken: accessToken
+					});
 					_this.loadTables(resolve, reject);
-				});
+				} else {
+
+					// no access token set, authenticate using client id
+					_this.client = new window.Dropbox({
+						clientId: _this.apiKey
+					});
+
+					// set redirect to return back to the same URL
+					var authUrl = _this.client.getAuthenticationUrl(window.location);
+					window.location.href = authUrl;
+				}
 			});
 
 			promise.then(function (value) {
-				console.debug("[setupDropbox] all promises resolved, calling callback function");
 				callback();
 			}).catch(function (error) {
 				console.error("[setupDropbox] Error on authentication or table initialization.", error);
@@ -764,7 +818,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "query",
+		key: 'query',
 		value: function query(tableName, _query, sort, start, limit) {
 			if (!_query) _query = null;
 			if (!sort) sort = null;
@@ -779,7 +833,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "queryAll",
+		key: 'queryAll',
 		value: function queryAll(tableName, params) {
 			if (!params) {
 				return this.query(tableName);
@@ -793,7 +847,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "update",
+		key: 'update',
 		value: function update(tableName, query, updateFunction) {
 			if (!query) query = null;
 			if (typeof updateFunction !== "function") {
@@ -802,7 +856,6 @@ var FileDB = function () {
 			}
 
 			var result = this.allTables[tableName].update(query, updateFunction);
-			console.debug("[FileDB.update] result of update:", result);
 			return result;
 		}
 
@@ -811,7 +864,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "rowCount",
+		key: 'rowCount',
 		value: function rowCount(tableName) {
 			return this.query(tableName).length;
 		}
@@ -821,7 +874,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "createTable",
+		key: 'createTable',
 		value: function createTable(tableName, fields) {
 			return this.allTables[tableName] = new Table(tableName, fields, this.client);
 		}
@@ -832,9 +885,9 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "createTableWithData",
+		key: 'createTableWithData',
 		value: function createTableWithData(tableName, data) {
-			if ((typeof data === "undefined" ? "undefined" : _typeof(data)) !== 'object' || !data.length || data.length < 1) {
+			if ((typeof data === 'undefined' ? 'undefined' : _typeof(data)) !== 'object' || !data.length || data.length < 1) {
 				error("Data supplied isn't in object form. Example: [{k:v,k:v},{k:v,k:v} ..]");
 			}
 
@@ -852,7 +905,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "insert",
+		key: 'insert',
 		value: function insert(tableName, data) {
 			return this.allTables[tableName].insert(data);
 		}
@@ -862,7 +915,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "tableFields",
+		key: 'tableFields',
 		value: function tableFields(tableName) {
 			return this.allTables[tableName].getTableFields();
 		}
@@ -873,7 +926,7 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "isNew",
+		key: 'isNew',
 		value: function isNew() {
 			return Object.keys(this.allTables).length === 0;
 		}
@@ -884,14 +937,13 @@ var FileDB = function () {
    */
 
 	}, {
-		key: "loadTables",
+		key: 'loadTables',
 		value: function loadTables(resolve, reject) {
 			var _this2 = this;
 
-			this.client.readdir("/", function (error, files) {
-				if (!!error) {
-					reject(error);
-				}
+			this.client.filesListFolder({
+				path: ''
+			}).then(function (response) {
 
 				var file,
 				    promises = [];
@@ -901,19 +953,18 @@ var FileDB = function () {
 				var _iteratorError = undefined;
 
 				try {
-					for (var _iterator = files[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+					for (var _iterator = response.entries[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
 						file = _step.value;
 
 						// files beginning with _ are containing data,
 						// tables do not have prefix - we need the tables here
-						if (file[0] === "_") {
+						if (file.name[0] === '_') {
 							continue;
 						}
 
 						// add a promise for this file to promises list
-						console.debug("[loadTables] add promise for file", file);
 						promises.push(new Promise(function (_resolve, _reject) {
-							_this2.allTables[file] = new Table(file, false, _this2.client, _resolve, _reject);
+							_this2.allTables[file.name] = new Table(file.name, false, _this2.client, _resolve, _reject);
 						}));
 					}
 
@@ -934,12 +985,14 @@ var FileDB = function () {
 				}
 
 				Promise.all(promises).then(function (values) {
-					console.debug("[loadTables] all files loaded successfully, values:", values);
+					console.info("[loadTables] all files loaded successfully");
 					resolve(values);
 				}).catch(function (error) {
 					console.debug("[loadTables] failed loading at least one file, error of failed promise:", error);
 					reject(error);
 				});
+			}).catch(function (error) {
+				reject(error);
 			});
 		}
 	}]);

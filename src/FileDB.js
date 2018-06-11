@@ -1,5 +1,4 @@
 // TODO insertOrUpdate method
-// TODO migrate to Dropbox APIv2, as v1 was deprecated end of July, 2016
 
 class FileDB {
 
@@ -11,29 +10,90 @@ class FileDB {
 	}
 
 	/**
+	 * checks if access token is set, first in localStorage
+	 * and then in URL hash (when redirected from Dropbox authentication).
+	 * If the token is set via in hash string, save it in localStorage.
+	 * 
+	 * @returns Access token if found, else null
+	 */
+	getAccessToken() {
+
+		var accessToken = null;
+
+		// check for access token in localStorage
+		if (typeof (Storage) !== 'undefined') {
+			var storedToken = localStorage.getItem('ACCESS_TOKEN');
+			if (typeof storedToken === 'string') {
+				accessToken = storedToken;
+			}
+		}
+
+		// check if access token is set within query params, and save it
+		var locationHash = window.location.hash;
+		if (!accessToken && locationHash && locationHash.length > 0) {
+			locationHash.substr(1).split('&').forEach(param => {
+				var keyValue = param.split('=');
+				if (keyValue[0] === 'access_token' && typeof keyValue[1] === 'string') {
+					accessToken = keyValue[1];
+					localStorage.setItem('ACCESS_TOKEN', accessToken);
+				}
+			});
+		}
+
+		return accessToken;
+	}
+
+	/**
+	 * checks if user is authenticated, by checking for access token.
+	 * 
+	 * @returns true if user has access token, else false
+	 */
+	isAuthenticated() {
+		return !!this.getAccessToken();
+	}
+
+	/**
 	 * initializes authentication to Dropbox API, and trigggers
 	 * loading of tables from Dropbox directory.
 	 */
 	setupDropbox(callback) {
 		var promise = new Promise((resolve, reject) => {
-			this.client = new Dropbox.Client({
-				"key": this.apiKey
-			});
 
-			this.client.authenticate(null, (error) => {
-				if (!!error) {
-					throw error;
-				}
+			// Dropbox API v2 requires more manual work for authentication.
+			// The following checks if an authentication token is already available
+			// and if available, uses it for authentication. Otherwise, use
+			// the app id to authenticate the user, after redirect parse the
+			// access token from window.location.hash string, and save it
+			// in localStorage for reuse on next re-visit.  
+
+			var accessToken = this.getAccessToken();
+
+			// access token is available, using it for authentication
+			if (accessToken) {
+
+				this.client = new window.Dropbox({
+					accessToken
+				});
 				this.loadTables(resolve, reject);
-			});
+
+			} else {
+
+				// no access token set, authenticate using client id
+				this.client = new window.Dropbox({
+					clientId: this.apiKey
+				});
+
+				// set redirect to return back to the same URL
+				var authUrl = this.client.getAuthenticationUrl(window.location);
+				window.location.href = authUrl;
+			}
 		});
 
 		promise
-			.then((value) => {
-				console.debug("[setupDropbox] all promises resolved, calling callback function");
+			.then(value => {
 				callback();
 			})
-			.catch((error) => {
+			.catch(error => {
 				console.error("[setupDropbox] Error on authentication or table initialization.", error);
 			});
 	}
@@ -72,15 +132,14 @@ class FileDB {
 	 * Update rows affected by query.
 	 */
 	update(tableName, query, updateFunction) {
-    if(!query) query = null;
-    if(typeof updateFunction !== "function") {
-      console.warn("updateFunction is empty, but required.")
-      return [];
-    }
+		if (!query) query = null;
+		if (typeof updateFunction !== "function") {
+			console.warn("updateFunction is empty, but required.")
+			return [];
+		}
 
 		var result = this.allTables[tableName].update(query, updateFunction);
-    console.debug("[FileDB.update] result of update:", result);
-    return result;
+		return result;
 	}
 
 	/**
@@ -142,39 +201,41 @@ class FileDB {
 	 * local memory, preparing the database for operations.
 	 */
 	loadTables(resolve, reject) {
-		this.client.readdir("/", (error, files) => {
-			if (!!error) {
-				reject(error);
-			}
+		this.client.filesListFolder({
+				path: ''
+			})
+			.then(response => {
 
-			var file, promises = [];
+				var file, promises = [];
 
-			for (file of files) {
-				// files beginning with _ are containing data,
-				// tables do not have prefix - we need the tables here
-				if (file[0] === "_") {
-					continue;
+				for (file of response.entries) {
+					// files beginning with _ are containing data,
+					// tables do not have prefix - we need the tables here
+					if (file.name[0] === '_') {
+						continue;
+					}
+
+					// add a promise for this file to promises list
+					promises.push(
+						new Promise((_resolve, _reject) => {
+							this.allTables[file.name] = new Table(file.name, false, this.client, _resolve, _reject);
+						})
+					);
 				}
 
-				// add a promise for this file to promises list
-				console.debug("[loadTables] add promise for file", file);
-				promises.push(
-					new Promise((_resolve, _reject) => {
-						this.allTables[file] = new Table(file, false, this.client, _resolve, _reject);
+				// wait for all files to be loaded successfully
+				Promise.all(promises)
+					.then(values => {
+						console.info("[loadTables] all files loaded successfully");
+						resolve(values);
 					})
-				);
-			}
-
-			// wait for all files to be loaded successfully
-			Promise.all(promises)
-				.then((values) => {
-					console.debug("[loadTables] all files loaded successfully, values:", values);
-					resolve(values);
-				})
-				.catch((error) => {
-					console.debug("[loadTables] failed loading at least one file, error of failed promise:", error);
-					reject(error);
-				});
-		});
+					.catch(error => {
+						console.debug("[loadTables] failed loading at least one file, error of failed promise:", error);
+						reject(error);
+					});
+			})
+			.catch(error => {
+				reject(error);
+			})
 	}
 }

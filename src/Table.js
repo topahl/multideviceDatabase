@@ -8,17 +8,16 @@ class Table {
 		create = create || false;
 		promiseResolve = promiseResolve || false;
 		promiseReject = promiseReject || false;
-		var file, tableFile;
+		var file;
 
 		this.tableFileData = {};
 		this.dataFileObjects = [];
 		this.data = [];
 		this.client = client;
-		this.tableName = tableName; // TODO debug
-		tableFile = new File(tableName, client);
+		this.tableFile = new File(tableName, client);
 
 		if (create) {
-			var promise = tableFile.readFile();
+			var promise = this.tableFile.readFile();
 			this.data[0] = {
 				maxSize: 62500, // 62500 bytes = 50kB
 				dataFiles: []
@@ -30,7 +29,7 @@ class Table {
 			file = this.createNewDatafile();
 			this.dataFileObjects.push(file);
 			this.data[0].dataFiles.push(file.getName());
-			tableFile.insert(this.data[0]);
+			this.tableFile.insert(this.data[0]);
 			this.tableFileData = this.data[0];
 
 			promise.then((data) => {
@@ -39,10 +38,10 @@ class Table {
 				}
 			});
 		} else {
-			tableFile.readFile()
+			this.tableFile.readFile()
 				.then((data) => {
 					var df, f, results;
-					this.data = tableFile.getDataArray();
+					this.data = this.tableFile.getDataArray();
 					this.tableFileData = this.data[0];
 					var promises = [];
 
@@ -55,7 +54,6 @@ class Table {
 					Promise.all(promises)
 						.then((values) => {
 							if (promiseResolve) {
-								console.debug("[Table.constructor] successfully loaded files for", tableName, values);
 								promiseResolve(values);
 							}
 						})
@@ -84,7 +82,7 @@ class Table {
 			dataFiles.push(dfo.getName());
 		}
 
-		return tableFile.update(void 0, {
+		return this.tableFile.update(void 0, {
 			'dataFiles': dataFiles
 		});
 	}
@@ -93,7 +91,7 @@ class Table {
 		var df = this.dataFileObjects[this.dataFileObjects.length - 1];
 
 		if (df.getSize() > this.tableFileData.maxSize) {
-			df = createNewDatafile();
+			df = this.createNewDatafile();
 			this.dataFileObjects.push(df);
 			this.tableFileData.dataFiles.push(df.getName());
 			this.updateTableData();
@@ -138,15 +136,15 @@ class Table {
 		return result;
 	}
 
-  update(query, updateFunction) {
-    var result = [];
+	update(query, updateFunction) {
+		var result = [];
 
 		for (dfo of this.dataFileObjects) {
 			result = result.concat(dfo.updateByFunction(query, updateFunction));
 		}
 
-    return result;
-  }
+		return result;
+	}
 
 	createNewDatafile() {
 		var file, name;
@@ -157,7 +155,7 @@ class Table {
 			return v.toString(16);
 		});
 
-		file = new File("_" + name, this.client);
+		file = new File('_' + name, this.client);
 		file.readFile();
 		// TODO check if we need to wait for file reading here
 		return file;
@@ -168,10 +166,10 @@ class Table {
 			order = null;
 		}
 
-		return function(x, y) {
+		return function (x, y) {
 			// case insensitive comparison for string values
-			var v1 = typeof(x[field]) === "string" ? x[field].toLowerCase() : x[field],
-				v2 = typeof(y[field]) === "string" ? y[field].toLowerCase() : y[field];
+			var v1 = typeof (x[field]) === "string" ? x[field].toLowerCase() : x[field],
+				v2 = typeof (y[field]) === "string" ? y[field].toLowerCase() : y[field];
 
 			if (order === "DESC") {
 				return v1 == v2 ? 0 : (v1 < v2 ? 1 : -1);
